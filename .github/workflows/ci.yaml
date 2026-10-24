@@ -102,12 +102,14 @@ jobs:
         run: docker load -i image.tar
 
       - name: Tag images for GHCR
-        env:
-          IMAGE: ghcr.io/${{ github.repository }}
-        run: |
-          docker tag nginx-assessment:"${GITHUB_SHA}" "$IMAGE:$GITHUB_SHA"
-          docker tag nginx-assessment:"${GITHUB_SHA}" "$IMAGE:latest"
+    env:
+      REPOSITORY: ${{ github.repository }}
+    run: |
+      IMAGE="ghcr.io/$(echo "$REPOSITORY" | tr '[:upper:]' '[:lower:]')"
 
+      docker tag nginx-assessment:"${GITHUB_SHA}" "$IMAGE:$GITHUB_SHA"
+      docker tag nginx-assessment:"${GITHUB_SHA}" "$IMAGE:latest"
+      
       - name: Log in to GHCR
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io \
