@@ -87,77 +87,55 @@ The image-size requirement of under 60 MB still needs verification against the a
 
 ## Task 4 — CI Pipeline
 
-The GitHub Actions workflow runs on pushes and pull requests targeting main.
+The GitHub Actions workflow (`.github/workflows/ci.yml`) automates linting, building, testing, and publishing the Docker image.
 
-1. Lint
+The workflow runs on pushes to `main` and `feature/project-structure`, and on pull requests targeting `main`.
 
-ShellCheck analyzes shell scripts in scripts/.
+#### 1. Lint
 
-Hadolint checks app/Dockerfile.
+- **ShellCheck** checks shell scripts in `scripts/`.
+- **Hadolint** checks `app/Dockerfile`.
 
-2. Build
+#### 2. Build
 
-Builds the Docker image.
+- Builds the Docker image from `app/`.
+- Passes the Git commit SHA through the `BUILD_SHA` build argument.
+- Saves the image as `image.tar`.
+- Uploads the image as a GitHub Actions artifact with a one-day retention period.
 
-Passes the Git commit SHA as a build argument.
+#### 3. Test
 
-Saves the image as a TAR archive.
+- Downloads and loads the image built by the previous job.
+- Tags the image locally as `nginx-assessment:test`.
+- Starts the container and maps host port `8080` to container port `8080`.
+- Retries the root endpoint health check up to 20 times, with a two-second delay between attempts.
+- Checks the `/healthz` endpoint separately.
+- Removes the test container even if a preceding test step fails.
 
-Uploads the archive as a workflow artifact.
+Both health checks use `scripts/healthcheck.sh`, executed through Bash. The script expects HTTP `200` and returns a non-zero exit code if the request fails or returns an unexpected status.
 
-3. Test
+#### 4. Publish
 
-Downloads and loads the image built by the previous job.
+The publish job runs only on pushes to `main`, after the lint, build, and test jobs succeed.
 
-Starts the container and maps port 8080.
+- Downloads and loads the same image artifact used by the test job.
+- Converts the GitHub repository path to lowercase to comply with Docker registry naming requirements.
+- Authenticates to GitHub Container Registry (GHCR) using the automatically provided `GITHUB_TOKEN`.
+- Tags and pushes the image using both the commit SHA and `latest`.
 
-Retries the application health check until the service responds or the timeout is reached.
+#### Image Reuse
 
-Verifies the /healthz endpoint.
+The Docker image is built once and transferred between jobs using a workflow artifact. The test and publish jobs load that artifact rather than rebuilding the image, ensuring that the published image is the same image that passed testing.
 
-Removes the test container, including when the job fails.
+#### Published Image
 
-4. Publish
+Images are published to GHCR using these tags:
 
-Publishing runs only after the lint, build, and test jobs succeed, and only for pushes to main.
-
-Authenticates to GHCR using the automatically provided GITHUB_TOKEN.
-
-Tags the existing image with the commit SHA and latest.
-
-Pushes both tags to the registry.
-
-Image reuse: The Docker image is built once and transferred between jobs using a workflow artifact. The test and publish jobs reuse that same image rather than rebuilding it, ensuring the published image is the one that was tested.
-
-Container Registry
-
-After a successful push to main, the image is published to:
-
+```text
 ghcr.io/<owner>/<repository>:<commit-sha>
 ghcr.io/<owner>/<repository>:latest
+```
 
-Replace <owner> and <repository> with the GitHub account or organization and repository name.
+The repository path is converted to lowercase before tagging and pushing.
 
-The repository's GitHub Actions permissions and GHCR package access must allow the workflow to publish packages.
-
-Verification
-
-The pipeline succeeds when:
-
-Shell scripts and the Dockerfile pass linting.
-
-The Docker image builds successfully.
-
-The application responds with HTTP 200.
-
-The /healthz endpoint passes its health check.
-
-On pushes to main, the image is successfully published to GHCR.
-
-Security
-
-The workflow uses read-only repository permissions by default.
-
-Package write permission is granted only to the publishing job.
-
-Authentication uses GitHub's automatically generated token instead of a hard-coded credential.
+Publishing requires the workflow's `packages: write` permission and appropriate GHCR package access. The `GITHUB_TOKEN` is supplied by GitHub Actions and does not need to be hard-coded into the repository.
