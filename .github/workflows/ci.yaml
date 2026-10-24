@@ -69,7 +69,7 @@ jobs:
       - name: Wait for readiness and test
         run: |
           for i in $(seq 1 20); do
-            if ./scripts/healthcheck.sh http://localhost:8080/; then
+            if bash ./scripts/healthcheck.sh http://localhost:8080/; then
               exit 0
             fi
             sleep 2
@@ -79,7 +79,7 @@ jobs:
           exit 1
 
       - name: Check health endpoint
-        run: ./scripts/healthcheck.sh http://localhost:8080/healthz
+        run: bash ./scripts/healthcheck.sh http://localhost:8080/healthz
 
       - name: Cleanup
         if: always()
