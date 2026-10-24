@@ -85,3 +85,79 @@ The image-size requirement of under 60 MB still needs verification against the a
 - [x] Non-root runtime verified.
 - [ ] Resolve the image-size requirement.
 
+## Task 4 — CI Pipeline
+
+The GitHub Actions workflow runs on pushes and pull requests targeting main.
+
+1. Lint
+
+ShellCheck analyzes shell scripts in scripts/.
+
+Hadolint checks app/Dockerfile.
+
+2. Build
+
+Builds the Docker image.
+
+Passes the Git commit SHA as a build argument.
+
+Saves the image as a TAR archive.
+
+Uploads the archive as a workflow artifact.
+
+3. Test
+
+Downloads and loads the image built by the previous job.
+
+Starts the container and maps port 8080.
+
+Retries the application health check until the service responds or the timeout is reached.
+
+Verifies the /healthz endpoint.
+
+Removes the test container, including when the job fails.
+
+4. Publish
+
+Publishing runs only after the lint, build, and test jobs succeed, and only for pushes to main.
+
+Authenticates to GHCR using the automatically provided GITHUB_TOKEN.
+
+Tags the existing image with the commit SHA and latest.
+
+Pushes both tags to the registry.
+
+Image reuse: The Docker image is built once and transferred between jobs using a workflow artifact. The test and publish jobs reuse that same image rather than rebuilding it, ensuring the published image is the one that was tested.
+
+Container Registry
+
+After a successful push to main, the image is published to:
+
+ghcr.io/<owner>/<repository>:<commit-sha>
+ghcr.io/<owner>/<repository>:latest
+
+Replace <owner> and <repository> with the GitHub account or organization and repository name.
+
+The repository's GitHub Actions permissions and GHCR package access must allow the workflow to publish packages.
+
+Verification
+
+The pipeline succeeds when:
+
+Shell scripts and the Dockerfile pass linting.
+
+The Docker image builds successfully.
+
+The application responds with HTTP 200.
+
+The /healthz endpoint passes its health check.
+
+On pushes to main, the image is successfully published to GHCR.
+
+Security
+
+The workflow uses read-only repository permissions by default.
+
+Package write permission is granted only to the publishing job.
+
+Authentication uses GitHub's automatically generated token instead of a hard-coded credential.
