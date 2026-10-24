@@ -1,4 +1,3 @@
-```yaml
 name: CI
 
 on:
@@ -130,4 +129,3 @@ jobs:
         run: |
           docker push "$IMAGE:$GITHUB_SHA"
           docker push "$IMAGE:latest"
-```
