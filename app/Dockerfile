@@ -17,8 +17,6 @@ RUN chown -R appuser:appgroup /usr/share/nginx/html \
     && sed -i "s/BUILD_ID_PLACEHOLDER/${BUILD_SHA}/g" \
        /usr/share/nginx/html/index.html 
 
-RUN chmod +x scripts/*
-
 
 USER appuser
 
