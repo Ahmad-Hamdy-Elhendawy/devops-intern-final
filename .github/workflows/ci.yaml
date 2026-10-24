@@ -1,0 +1,121 @@
+
+name: CI
+
+on:
+  push:
+    branches: [main, feature/project-structure]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: scripts
+
+      - uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: app/Dockerfile
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: |
+          docker build \
+            --build-arg BUILD_SHA="${GITHUB_SHA}" \
+            -t nginx-assessment:"${GITHUB_SHA}" \
+            ./app
+
+      - name: Save image
+        run: docker save nginx-assessment:"${GITHUB_SHA}" -o image.tar
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nginx-image
+          path: image.tar
+          retention-days: 1
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nginx-image
+
+      - name: Load Docker image
+        run: docker load -i image.tar
+
+      - name: Tag test image
+        run: docker tag nginx-assessment:"${GITHUB_SHA}" nginx-assessment:test
+
+      - name: Start container
+        run: docker run -d --name nginx-test -p 8080:8080 nginx-assessment:test
+
+      - name: Wait for readiness and test
+        run: |
+          for i in $(seq 1 20); do
+            if bash ./scripts/healthcheck.sh http://localhost:8080/; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs nginx-test
+          exit 1
+
+      - name: Check health endpoint
+        run: bash ./scripts/healthcheck.sh http://localhost:8080/healthz
+
+      - name: Cleanup
+        if: always()
+        run: docker rm -f nginx-test || true
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [lint, build, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nginx-image
+
+      - name: Load Docker image
+        run: docker load -i image.tar
+
+      - name: Tag images for GHCR
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+        run: |
+          docker tag nginx-assessment:"${GITHUB_SHA}" "$IMAGE:$GITHUB_SHA"
+          docker tag nginx-assessment:"${GITHUB_SHA}" "$IMAGE:latest"
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
+      - name: Push images
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+        run: |
+          docker push "$IMAGE:$GITHUB_SHA"
+          docker push "$IMAGE:latest"
