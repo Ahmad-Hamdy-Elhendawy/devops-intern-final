@@ -1,5 +1,38 @@
 DevOps intern final assemsnet
 
+
+
+## Task 2 — Linux Scripting
+
+The repository includes two executable Bash scripts.
+
+- `scripts/sysinfo.sh` reports the current user, effective UID, hostname, kernel release, ISO-8601 date, disk usage, memory usage, and Docker daemon status.
+- `scripts/healthcheck.sh` checks a target URL for HTTP 200. Its default URL is `http://localhost:8080`.
+
+### Validation
+
+Run ShellCheck:
+
+```bash
+shellcheck scripts/sysinfo.sh scripts/healthcheck.sh
+```
+
+Run the system information report:
+
+```bash
+./scripts/sysinfo.sh
+```
+
+Check the application:
+
+```bash
+./scripts/healthcheck.sh
+./scripts/healthcheck.sh http://localhost:8080/healthz
+```
+
+Both scripts are tracked as executable files in Git. Sample output should be recorded from the actual environment used for validation.
+
+
 ## Task 3 — Containerisation
 
 A static HTML application served by NGINX on port `8080`. The container uses a pinned base-image tag, runs as a non-root user, injects a build identifier, and provides a `/healthz` endpoint.
