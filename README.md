@@ -139,3 +139,96 @@ ghcr.io/<owner>/<repository>:latest
 The repository path is converted to lowercase before tagging and pushing.
 
 Publishing requires the workflow's `packages: write` permission and appropriate GHCR package access. The `GITHUB_TOKEN` is supplied by GitHub Actions and does not need to be hard-coded into the repository.
+
+
+
+## Task 5 — Nomad Deployment
+
+### Configuration
+
+The NGINX application is deployed as a Nomad service job using the Docker driver and an image hosted on GitHub Container Registry (GHCR).
+
+- **Job:** `nginx-app`
+- **Task group:** `nginx`, with one allocation
+- **Image tag:** `33c0c9592779f5475fd047cb65d7972f761ab136`
+- **Resources:** 100 MHz CPU and 64 MB memory
+- **Networking:** dynamically assigned host port mapped to container port `8080`
+- **Service discovery:** registered with Consul as `nginx-app`
+- **Health check:** HTTP `GET /healthz` every 10 seconds, with a 2-second timeout
+- **Deployment strategy:** one task updated at a time, a 10-second minimum healthy period, a 2-minute healthy deadline, and automatic rollback enabled
+- **Recovery:** restart and rescheduling policies configured
+
+### Validate the Job
+
+```bash
+nomad job validate nomad/nginx-app.nomad.hcl
+```
+
+### Plan the Deployment
+
+```bash
+nomad job plan \
+  -var="image_tag=33c0c9592779f5475fd047cb65d7972f761ab136" \
+  nomad/nginx-app.nomad.hcl
+```
+
+Observed result:
+
+```text
+Job: "nginx-app"
+Task Group: "nginx" (1 ignore)
+  Task: "nginx"
+
+Scheduler dry-run:
+- All tasks successfully allocated.
+```
+
+### Run the Job
+
+```bash
+nomad job run \
+  -var="image_tag=33c0c9592779f5475fd047cb65d7972f761ab136" \
+  nomad/nginx-app.nomad.hcl
+```
+
+### Verify Deployment Status
+
+```bash
+nomad job status nginx-app
+nomad job allocs nginx-app
+```
+
+Observed deployment status:
+
+```text
+Status        = running
+Latest Deployment Status = successful
+
+Task Group  Desired  Placed  Healthy  Unhealthy
+nginx       1        1       1        0
+
+Allocation:
+4eab0b2d  nginx  run  running
+```
+
+### Verify Application Health
+
+The running application was tested through its dynamically assigned host port:
+
+```bash
+curl -i http://127.0.0.1:30736/healthz
+```
+
+Observed response:
+
+```text
+HTTP/1.1 200 OK
+Server: nginx/1.27.5
+Content-Type: text/plain
+Content-Length: 8
+
+healthy
+```
+
+The deployment completed successfully with one running, healthy allocation, and the application health endpoint returned HTTP 200.
+
