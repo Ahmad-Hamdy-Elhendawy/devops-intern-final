@@ -233,3 +233,40 @@ healthy
 
 The deployment completed successfully with one running, healthy allocation, and the application health endpoint returned HTTP 200.
 
+## Task 6 — Log Aggregation with Loki
+
+Implemented a Docker Compose monitoring stack with Loki, Promtail, and Grafana.
+
+- Loki stores and exposes logs for querying.
+- Promtail discovers Docker containers and forwards logs to Loki.
+- Grafana Explore provides LogQL-based log queries.
+- Verified labels: `container`, `job`, `service`, and `nomad_alloc_id`.
+
+### Start the Stack
+
+```bash
+docker compose -f monitoring/docker-compose.yaml config
+docker compose -f monitoring/docker-compose.yaml up -d
+docker compose -f monitoring/docker-compose.yaml ps
+curl -i http://localhost:3100/ready
+```
+
+### Query Logs
+
+In Grafana Explore, select Loki, use Code mode, and run:
+
+```logql
+{container=~".+"}
+```
+
+To find the test request:
+
+```logql
+{container=~".+"} |= "/task6-test-not-found"
+```
+
+The test request was generated against the NGINX application using `/task6-test-not-found`. The required log labels were verified in Grafana Explore.
+
+Detailed setup, queries, and troubleshooting: [`monitoring/loki_setup.md`](monitoring/loki_setup.md).
+
+Screenshot evidence: [`docs/screenshots/loki-404-query.png`](docs/screenshots/loki-404-query.png).
