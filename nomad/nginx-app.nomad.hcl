@@ -1,3 +1,4 @@
+
 variable "image_tag" {
   description = "GHCR image tag to deploy"
   type        = string
@@ -9,14 +10,15 @@ job "nginx-app" {
   type        = "service"
 
   update {
-    max_parallel      = 1
-    min_healthy_time  = "10s"
-    healthy_deadline  = "2m"
-    auto_revert       = true
+    max_parallel     = 1
+    min_healthy_time = "10s"
+    healthy_deadline = "2m"
+    auto_revert      = true
   }
 
   group "nginx" {
     count = 1
+    shutdown_delay = "5s"
 
     network {
       port "http" {
@@ -32,15 +34,16 @@ job "nginx-app" {
     }
 
     reschedule {
-      attempts = 3
-      interval = "1h"
-      delay    = "30s"
+      attempts  = 3
+      interval  = "1h"
+      delay     = "30s"
+      unlimited = false
     }
 
     service {
       provider = "consul"
       name     = "nginx-app"
-      port     = "http"
+      port     = "http" 
 
       check {
         name     = "nginx-health"
