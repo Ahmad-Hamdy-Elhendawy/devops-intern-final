@@ -1,0 +1,65 @@
+services:
+  nginx:
+    build:
+      context: ../app
+      dockerfile: Dockerfile
+    image: devops-assessment-nginx-metrics:local
+    container_name: metrics-nginx
+    networks:
+      - metrics
+    restart: unless-stopped
+
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.4.2
+    container_name: nginx-exporter
+    command:
+      - --nginx.scrape-uri=http://nginx:8080/stub_status
+
+    depends_on:
+      - nginx
+    networks:
+      - metrics
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    container_name: metrics-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - 8624:9090
+    networks:
+      - metrics
+    depends_on:
+      - nginx-exporter
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.6.0
+    container_name: metrics-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    networks:
+      - metrics
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+networks:
+  metrics:
+
+volumes:
+  prometheus-data:
+  grafana-data:
