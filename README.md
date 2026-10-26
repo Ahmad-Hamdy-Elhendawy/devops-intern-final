@@ -1,248 +1,346 @@
-DevOps intern final assemsnet
+# DevOps Intern Final Assessment
 
+[![CI](https://github.com/Ahmad-Hamdy-Elhendawy/devops-intern-final/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/Ahmad-Hamdy-Elhendawy/devops-intern-final/actions/workflows/ci.yaml)
 
+**Developer:** Ahmed El Hendawy
 
-## Task 2 — Linux Scripting
+**Assessment date:** 2026-10-24
 
-The repository includes two executable Bash scripts.
+This repository contains the implementation for the DevOps intern final
+assessment. It includes Linux utility scripts, a containerised NGINX
+application, a GitHub Actions pipeline, a Nomad job, and local logging and
+metrics stacks.
 
-- `scripts/sysinfo.sh` reports the current user, effective UID, hostname, kernel release, ISO-8601 date, disk usage, memory usage, and Docker daemon status.
-- `scripts/healthcheck.sh` checks a target URL for HTTP 200. Its default URL is `http://localhost:8080`.
+## Repository layout
 
-### Validation
+```text
+.
+├── .github/workflows/ci.yaml       # GitHub Actions pipeline
+├── app/                            # NGINX image and static application
+├── docs/screenshots/               # Monitoring evidence
+├── metrics/                        # Prometheus and Grafana metrics stack
+├── monitoring/                     # Loki, Promtail, and Grafana log stack
+├── nomad/                          # Nomad deployment job
+└── scripts/                        # Bash utilities
+```
 
-Run ShellCheck:
+## Prerequisites
+
+- Docker 29.4.3 and Docker Compose v5.1.3 were installed in the verification
+  environment.
+- Bash and `curl`
+- ShellCheck and Hadolint for local linting (versions were not available in
+  the verification environment)
+- Nomad and Consul for the deployment task (versions were not available in
+  the verification environment)
+
+Commands below are intended to be run from the repository root.
+
+## Architecture
+
+```text
+Source + feature branch
+        |
+        v
+GitHub Actions: lint -> build -> test -> publish
+        |
+        v
+GHCR image (:commit-sha, :latest)
+        |
+        v
+Nomad + Docker driver + Consul health check
+        |
+        +--> NGINX access logs -> Promtail -> Loki -> Grafana
+        |
+        +--> /stub_status -> Prometheus exporter -> Prometheus -> Grafana
+```
+
+The CI build produces one image artifact. The test and publish jobs reuse that
+artifact, so the image published to GHCR is the image that passed the
+health-check test.
+
+## Quick Start
+
+The following commands clone the repository, build the application, start it,
+and verify both the home page and health endpoint:
+
+```bash
+git clone https://github.com/Ahmad-Hamdy-Elhendawy/devops-intern-final.git
+cd devops-intern-final
+docker build --build-arg BUILD_SHA=local-test -t devops-intern-final:local ./app
+docker run -d --name devops-test -p 8080:8080 devops-intern-final:local
+curl -i http://localhost:8080/
+curl -i http://localhost:8080/healthz
+docker inspect --format='{{.State.Health.Status}}' devops-test
+docker rm -f devops-test
+```
+
+The expected health response is HTTP 200 with the body `healthy`, and the
+container health status is `healthy`.
+
+## Task 1 — Source control
+
+The public repository is
+[`Ahmad-Hamdy-Elhendawy/devops-intern-final`](https://github.com/Ahmad-Hamdy-Elhendawy/devops-intern-final).
+The repository uses incremental conventional-style commits such as `feat:`,
+`fix:`, `docs:`, and `ci:`. IDE metadata and secrets are excluded by
+[`.gitignore`](.gitignore).
+
+Review the local history, branches, and release tags with:
+
+```bash
+git log --oneline --decorate --graph --all
+git branch --all
+git tag --list
+```
+
+The intended delivery workflow is to develop on `feature/*`, open and
+self-review a pull request, merge to `main`, and tag the final state. The
+repository currently has a `feature/project-structure` remote branch, but no
+`v1.0.0` tag was verifiable from the inspected local or remote refs:
+
+```bash
+git switch -c feature/<description>
+git add .
+git commit -m "feat: <description>"
+git push -u origin feature/<description>
+# Open and review the pull request on GitHub, then merge it to main.
+git switch main
+git pull --ff-only
+git tag -a v1.0.0 -m "Release v1.0.0"
+git push origin v1.0.0
+```
+
+The inspected history confirms incremental commits with `feat`, `fix`, and
+`docs` prefixes. A merged, self-reviewed pull request was not verifiable from
+the local repository.
+
+## Task 2 — Linux scripting
+
+The repository includes two executable Bash scripts:
+
+- `scripts/sysinfo.sh` reports the current user, effective UID, hostname,
+  kernel release, ISO-8601 date, disk usage, memory usage, and Docker daemon
+  status. It uses `free` when available and falls back to `/proc/meminfo`.
+- `scripts/healthcheck.sh [URL]` checks that a URL returns HTTP 200. Its
+  default URL is `http://localhost:8080`. It applies five-second connection
+  and ten-second total request timeouts.
+
+Run ShellCheck and the scripts:
 
 ```bash
 shellcheck scripts/sysinfo.sh scripts/healthcheck.sh
-```
-
-Run the system information report:
-
-```bash
 ./scripts/sysinfo.sh
-```
-
-Check the application:
-
-```bash
 ./scripts/healthcheck.sh
 ./scripts/healthcheck.sh http://localhost:8080/healthz
 ```
 
-Both scripts are tracked as executable files in Git. Sample output should be recorded from the actual environment used for validation.
+Expected ShellCheck result: the command exits with status 0 and prints no
+diagnostics.
 
+The exact system-information values are host-dependent. Capture the output
+from the environment used for submission:
+
+```bash
+./scripts/sysinfo.sh > docs/sysinfo-output.txt
+```
+
+Do not commit host-sensitive output unless it is required as assessment
+evidence.
+
+`sysinfo.sh` exits non-zero when Docker is not installed or the daemon is not
+accessible. `healthcheck.sh` exits non-zero when `curl` is unavailable, the
+target cannot be reached, or the response status is not 200.
 
 ## Task 3 — Containerisation
 
-A static HTML application served by NGINX on port `8080`. The container uses a pinned base-image tag, runs as a non-root user, injects a build identifier, and provides a `/healthz` endpoint.
+The application is a static HTML page served by NGINX on port `8080`.
 
-### Build and run
+The image in [`app/Dockerfile`](app/Dockerfile):
 
-From the repository root:
+- uses the pinned `nginx:1.27-alpine` base image;
+- accepts `BUILD_SHA` and stores it in the OCI revision label and the page;
+- runs NGINX as the non-root `appuser`;
+- configures writable temporary and PID paths under `/tmp`;
+- defines a Docker health check for `/healthz`; and
+- exposes `/stub_status` for the metrics exporter.
+
+Build and run the image:
 
 ```bash
-docker build --build-arg BUILD_SHA=local-test -t devops-intern-final:local ./app
-docker run -d --name devops-test -p 8080:8080 devops-intern-final:local
+docker build \
+  --build-arg BUILD_SHA=local-test \
+  -t devops-intern-final:local \
+  ./app
+
+docker run -d \
+  --name devops-test \
+  -p 8080:8080 \
+  devops-intern-final:local
 ```
 
-The image built successfully and the container started.
-
-### Verification
+Verify the application, health check, build identifier, and runtime user:
 
 ```bash
+curl -i http://localhost:8080/
 curl -i http://localhost:8080/healthz
-```
-
-**Observed:** HTTP `200`, body `healthy`.
-
-```bash
 docker inspect --format='{{.State.Health.Status}}' devops-test
+docker inspect --format='{{.Config.User}}' devops-test
+docker image inspect --format='{{index .Config.Labels "org.opencontainers.image.revision"}}' \
+  devops-intern-final:local
 ```
 
-**Observed:** `healthy`.
-
-The home page loaded successfully, the build identifier was replaced with `local-test`, and the container ran as a non-root user.
-
-### Image size
+The health endpoint returns HTTP 200 with `healthy`. The image-size
+requirement should be evaluated using the measurement specified by the
+assessment:
 
 ```bash
 docker image inspect --format='{{.Size}}' devops-intern-final:local
 docker image ls devops-intern-final:local
 ```
 
-**Observed results:**
-- Image metadata size: `20,979,993` bytes.
-- `docker image ls` displayed disk usage of `73.7MB`.
+Observed validation from the assessment environment:
 
-The image-size requirement of under 60 MB still needs verification against the assessment's expected measurement.
+- `/healthz` returned HTTP 200 with body `healthy`.
+- Docker reported the container health status as `healthy`.
+- The image metadata size was `20,979,993` bytes.
+- `docker image ls` displayed `73.7MB`; this uses a different display
+  measurement from the metadata size and should be compared with the
+  assessor's stated definition of “under 60 MB”.
 
-### Status
+Clean up the local container when finished:
 
-- [x] Image builds and runs.
-- [x] Application and health endpoint verified.
-- [x] Build identifier injected.
-- [x] Non-root runtime verified.
-- [ ] Resolve the image-size requirement.
+```bash
+docker rm -f devops-test
+```
 
-## Task 4 — CI Pipeline
+## Task 4 — CI pipeline
 
-The GitHub Actions workflow runs on pushes and pull requests targeting main.
+The workflow in [`.github/workflows/ci.yaml`](.github/workflows/ci.yaml) runs
+on pushes to `main` and on pull requests
+targeting `main`.
 
-1. Lint
+### Lint
 
-ShellCheck analyzes shell scripts in scripts/.
+- ShellCheck analyzes the scripts in `scripts/`.
+- Hadolint analyzes `app/Dockerfile`.
+- The workflow uses `actions/checkout@v4`,
+  `ludeeus/action-shellcheck@2.0.0`, and
+  `hadolint/hadolint-action@v3.1.0`.
 
-Hadolint checks app/Dockerfile.
+### Build
 
-2. Build
+The build job creates an image tagged with the commit SHA, passes
+`GITHUB_SHA` as `BUILD_SHA`, saves the image as `image.tar`, and uploads it as
+the `nginx-image` artifact with one-day retention.
 
-Builds the Docker image.
+### Test
 
-Passes the Git commit SHA as a build argument.
+The test job downloads and loads the artifact, tags it as
+`nginx-assessment:test`, starts it on host port `8080`, and retries the
+application health check for up to 20 attempts with a two-second delay. It
+then checks `/healthz` and removes the test container with an `always()` cleanup
+step.
 
-Saves the image as a TAR archive.
+### Publish
 
-Uploads the archive as a workflow artifact.
+Publishing runs only after lint, build, and test succeed, and only for pushes
+to `main`. It:
 
-3. Test
+1. loads the image built by the build job;
+2. creates a lowercase GHCR image name from `github.repository`;
+3. tags the same image with both `GITHUB_SHA` and `latest`;
+4. authenticates with the automatically provided `GITHUB_TOKEN`; and
+5. pushes both tags to:
 
-Downloads and loads the image built by the previous job.
-
-Starts the container and maps port 8080.
-
-Retries the application health check until the service responds or the timeout is reached.
-
-Verifies the /healthz endpoint.
-
-Removes the test container, including when the job fails.
-
-4. Publish
-
-Publishing runs only after the lint, build, and test jobs succeed, and only for pushes to main.
-
-Authenticates to GHCR using the automatically provided GITHUB_TOKEN.
-
-Tags the existing image with the commit SHA and latest.
-
-Pushes both tags to the registry.
-
-Image reuse: The Docker image is built once and transferred between jobs using a workflow artifact. The test and publish jobs reuse that same image rather than rebuilding it, ensuring the published image is the one that was tested.
-
-Container Registry
-
-After a successful push to main, the image is published to:
-
+```text
 ghcr.io/<owner>/<repository>:<commit-sha>
 ghcr.io/<owner>/<repository>:latest
 ```
 
-The repository path is converted to lowercase before tagging and pushing.
+The publish job requests `packages: write`; no registry credential is
+hard-coded in the repository.
 
-Publishing requires the workflow's `packages: write` permission and appropriate GHCR package access. The `GITHUB_TOKEN` is supplied by GitHub Actions and does not need to be hard-coded into the repository.
+The workflow grants `contents: read` by default and adds only `packages: write`
+to the publish job. The build artifact is retained for one day and is loaded
+by both the test and publish jobs, so the published image is not rebuilt.
 
+The badge at the top of this document links to the `main` workflow status; a
+green result was not independently verified during this review. For a local
+equivalent, run the same checks used by CI:
 
+```bash
+shellcheck scripts/sysinfo.sh scripts/healthcheck.sh
+hadolint app/Dockerfile
+```
 
-## Task 5 — Nomad Deployment
+## Task 5 — Nomad deployment
 
-### Configuration
+[`nomad/nginx-app.nomad.hcl`](nomad/nginx-app.nomad.hcl) defines a one-instance
+Nomad service job named `nginx-app`:
 
-The NGINX application is deployed as a Nomad service job using the Docker driver and an image hosted on GitHub Container Registry (GHCR).
+- Docker driver and GHCR image
+  `ghcr.io/ahmad-hamdy-elhendawy/devops-intern-final:${var.image_tag}`;
+- default image tag
+  `33c0c9592779f5475fd047cb65d7972f761ab136`;
+- 100 MHz CPU and 64 MB memory;
+- dynamically assigned host port mapped to container port `8080`;
+- Consul service registration named `nginx-app`;
+- HTTP health check for `/healthz` every 10 seconds with a two-second timeout;
+- one-at-a-time updates, a ten-second minimum healthy period, a two-minute
+  healthy deadline, and automatic rollback; and
+- bounded restart and rescheduling policies.
 
-- **Job:** `nginx-app`
-- **Task group:** `nginx`, with one allocation
-- **Image tag:** `33c0c9592779f5475fd047cb65d7972f761ab136`
-- **Resources:** 100 MHz CPU and 64 MB memory
-- **Networking:** dynamically assigned host port mapped to container port `8080`
-- **Service discovery:** registered with Consul as `nginx-app`
-- **Health check:** HTTP `GET /healthz` every 10 seconds, with a 2-second timeout
-- **Deployment strategy:** one task updated at a time, a 10-second minimum healthy period, a 2-minute healthy deadline, and automatic rollback enabled
-- **Recovery:** restart and rescheduling policies configured
-
-### Validate the Job
+Validate and plan the job:
 
 ```bash
 nomad job validate nomad/nginx-app.nomad.hcl
-```
-
-### Plan the Deployment
-
-```bash
 nomad job plan \
   -var="image_tag=33c0c9592779f5475fd047cb65d7972f761ab136" \
   nomad/nginx-app.nomad.hcl
 ```
 
-Observed result:
-
-```text
-Job: "nginx-app"
-Task Group: "nginx" (1 ignore)
-  Task: "nginx"
-
-Scheduler dry-run:
-- All tasks successfully allocated.
-```
-
-### Run the Job
+Run and inspect it:
 
 ```bash
 nomad job run \
   -var="image_tag=33c0c9592779f5475fd047cb65d7972f761ab136" \
   nomad/nginx-app.nomad.hcl
-```
-
-### Verify Deployment Status
-
-```bash
 nomad job status nginx-app
 nomad job allocs nginx-app
 ```
 
-Observed deployment status:
-
-```text
-Status        = running
-Latest Deployment Status = successful
-
-Task Group  Desired  Placed  Healthy  Unhealthy
-nginx       1        1       1        0
-
-Allocation:
-4eab0b2d  nginx  run  running
-```
-
-### Verify Application Health
-
-The running application was tested through its dynamically assigned host port:
+Use the dynamically assigned host port shown by Nomad to verify the service:
 
 ```bash
-curl -i http://127.0.0.1:30736/healthz
+curl -i http://127.0.0.1:<allocated-port>/healthz
 ```
 
-Observed response:
+Previously recorded deployment verification reported one running and healthy
+allocation:
 
 ```text
-HTTP/1.1 200 OK
-Server: nginx/1.27.5
-Content-Type: text/plain
-Content-Length: 8
-
-healthy
+Status                  = running
+Latest Deployment Status = successful
+Desired  Placed  Healthy  Unhealthy
+1        1       1        0
 ```
 
-The deployment completed successfully with one running, healthy allocation, and the application health endpoint returned HTTP 200.
+## Task 6 — Log aggregation with Loki
 
-## Task 6 — Log Aggregation with Loki
+The [`monitoring/`](monitoring/) Compose stack contains:
 
-Implemented a Docker Compose monitoring stack with Loki, Promtail, and Grafana.
+- Loki 3.5.0 for log storage and queries on host port `3100`;
+- Promtail 3.5.0, which discovers Docker containers through the read-only
+  Docker socket and forwards logs to Loki;
+- Grafana 11.6.0 on host port `3000`; and
+- persistent Docker volumes for Loki data, Promtail positions, and Grafana
+  data.
 
-- Loki stores and exposes logs for querying.
-- Promtail discovers Docker containers and forwards logs to Loki.
-- Grafana Explore provides LogQL-based log queries.
-- Verified labels: `container`, `job`, `service`, and `nomad_alloc_id`.
+Promtail adds the `container`, `job`, `service`, and `nomad_alloc_id` labels.
+The `service` label is set to `nginx-app` by the configuration.
 
-### Start the Stack
+Start and check the stack:
 
 ```bash
 docker compose -f monitoring/docker-compose.yaml config
@@ -251,54 +349,157 @@ docker compose -f monitoring/docker-compose.yaml ps
 curl -i http://localhost:3100/ready
 ```
 
-### Query Logs
+Open [Grafana](http://localhost:3000), configure Loki with the internal URL
+`http://loki:3100`, and use Explore in Code mode. Generate a test NGINX
+access-log entry and query it:
 
-In Grafana Explore, select Loki, use Code mode, and run:
+```bash
+curl -i http://127.0.0.1:8080/task6-test-not-found
+```
 
 ```logql
 {container=~".+"}
-```
-
-To find the test request:
-
-```logql
 {container=~".+"} |= "/task6-test-not-found"
 ```
 
-The test request was generated against the NGINX application using `/task6-test-not-found`. The required log labels were verified in Grafana Explore.
+Additional setup and troubleshooting details are in
+[`monitoring/loki-setup.md`](monitoring/loki-setup.md). Screenshot evidence
+is available at
+[`docs/screenshots/loki-404-query.png`](docs/screenshots/loki-404-query.png).
 
-Detailed setup, queries, and troubleshooting: [`monitoring/loki_setup.md`](monitoring/loki_setup.md).
-
-Screenshot evidence: [`docs/screenshots/loki-404-query.png`](docs/screenshots/loki-404-query.png).
-
-
-## Metrics Stack
-
-The `metrics/` directory contains a Docker Compose stack for collecting and visualizing NGINX metrics using the NGINX Prometheus Exporter, Prometheus, and Grafana.
-
-Start the stack from the repository root:
+Stop the stack with:
 
 ```bash
-docker compose -f metrics/docker-compose.yaml up -d --build
+docker compose -f monitoring/docker-compose.yaml down
 ```
 
-Access the services:
+## Metrics stack
 
-- **Prometheus:** http://localhost:8624
-- **Grafana:** http://localhost:3001 (local credentials: `admin` / `admin`)
+The [`metrics/`](metrics/) Compose stack collects NGINX metrics through the
+NGINX Prometheus Exporter:
 
-Prometheus scrapes NGINX exporter metrics every 15 seconds. Grafana loads the provisioned dashboard from `metrics/grafana/dashboards/nginx-metrics.json`.
+```text
+NGINX :8080/stub_status
+    -> nginx-prometheus-exporter :9113
+    -> Prometheus :9090
+    -> Grafana :3000
+```
 
-### Metrics Screenshots
+The stack publishes Prometheus on host port `8624` and Grafana on host port
+`3001`. Prometheus scrapes the exporter every 15 seconds, and Grafana
+provisions the Prometheus data source and the NGINX dashboard.
 
-**Prometheus — Scrape Targets**
+Start and validate the stack:
 
-![Prometheus targets showing NGINX scrape status](docs/screenshots/prometheus-targets.png)
+```bash
+docker compose -f metrics/docker-compose.yaml config -q
+docker compose -f metrics/docker-compose.yaml up -d --build
+docker compose -f metrics/docker-compose.yaml ps
+```
 
-**Grafana — NGINX Metrics Dashboard**
+Open:
 
-![Grafana dashboard displaying NGINX metrics](docs/screenshots/grafana-nginx-dashboard.png)
+- [Prometheus](http://localhost:8624)
+- [Prometheus targets](http://localhost:8624/targets)
+- [Grafana](http://localhost:3001), using local credentials `admin` / `admin`
 
+The `nginx` target should be **UP**. Useful PromQL queries include:
 
-See [`metrics/README.md`](metrics/README.md) for architecture, configuration, verification commands, and troubleshooting.
--
+```promql
+up{job="nginx"}
+nginx_http_requests_total
+nginx_connections_active
+```
+
+For component-level verification, see
+[`metrics/README.md`](metrics/README.md). Screenshots:
+
+- [Prometheus targets](docs/screenshots/prometheus-targets.png)
+- [Grafana NGINX dashboard](docs/screenshots/grafana-nginx-dashboard.png)
+
+Stop the metrics stack:
+
+```bash
+docker compose -f metrics/docker-compose.yaml down
+```
+
+Add `-v` to remove the persisted Prometheus and Grafana volumes.
+
+## Troubleshooting
+
+The Loki troubleshooting records below are documented in
+[`monitoring/loki-setup.md`](monitoring/loki-setup.md). The container restart
+and Prometheus checks are diagnostic procedures; they are not claims that
+those failures occurred in the verification environment.
+
+### The health check cannot connect
+
+Confirm that the container is running and that port `8080` is not already in
+use:
+
+```bash
+docker ps
+docker logs devops-test
+docker rm -f devops-test
+docker run -d --name devops-test -p 8080:8080 devops-intern-final:local
+```
+
+### Loki readiness succeeds but Grafana cannot query Loki
+
+Grafana runs inside the Compose network, so its data source URL must be
+`http://loki:3100`, not `localhost:3100`. Verify readiness from the host with
+`curl http://localhost:3100/ready`, then configure the internal service URL in
+Grafana and test the connection.
+
+### Loki root URL returns 404
+
+The Loki root path is not a readiness endpoint. Use:
+
+```bash
+curl -i http://localhost:3100/ready
+```
+
+An HTTP 404 from `http://localhost:3100/` is expected.
+
+### Prometheus does not show the NGINX target as UP
+
+Check that the exporter can reach the NGINX `/stub_status` endpoint and that
+all metrics services are on the same Compose network:
+
+```bash
+docker compose -f metrics/docker-compose.yaml ps
+docker compose -f metrics/docker-compose.yaml exec nginx \
+  wget -qO- http://127.0.0.1:8080/stub_status
+docker compose -f metrics/docker-compose.yaml exec nginx-exporter \
+  wget -qO- http://127.0.0.1:9113/metrics
+```
+
+## Known limitations
+
+- The application and monitoring stacks are intended for local assessment
+  use, not production. They use single-node services and local Docker
+  volumes.
+- Grafana uses the default local credentials `admin` / `admin`; production
+  deployment requires a secret-management solution and access controls.
+- Promtail requires read-only access to the Docker socket, which is powerful
+  and should be replaced with a safer log collection boundary in production.
+- The image-size result depends on whether the assessor evaluates compressed
+  registry size, Docker metadata size, or the `docker image ls` display.
+- Nomad and Consul addresses, credentials, and cluster configuration are
+  intentionally external to this repository.
+
+## Remaining assessment gaps
+
+- The `v1.0.0` release tag and a merged, self-reviewed pull request were not
+  verifiable from the inspected refs.
+- CI status and a published GHCR image were not independently verified.
+- Nomad, Consul, ShellCheck, and Hadolint versions were not available in the
+  verification environment, so no versions are claimed for them.
+- The image-size requirement remains unresolved: the recorded outputs are
+  `20,979,993` bytes from `docker image inspect` and `73.7MB` from
+  `docker image ls`. The assessment does not establish which measurement
+  governs the 60 MB limit.
+- The rubric requests three encountered troubleshooting failures; the
+  repository documents two specific Loki issues (Grafana's empty protocol
+  scheme and the expected Loki root-path 404). The remaining troubleshooting
+  entries are valid diagnostics but are not recorded as encountered failures.
