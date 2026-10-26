@@ -93,7 +93,9 @@ git clone https://github.com/Ahmad-Hamdy-Elhendawy/devops-intern-final.git
 cd devops-intern-final
 nomad job run nomad/nginx-app.nomad.hcl
 nomad job status nginx-app
-PORT=$(curl -s http://127.0.0.1:8500/v1/catalog/service/nginx-app | grep -o '"ServicePort":[0-9]*' | cut -d: -f2)
+PORT=$(curl -s http://127.0.0.1:8500/v1/catalog/service/nginx-app \
+  | grep -o '"ServicePort":[[:space:]]*[0-9]*' \
+  | grep -o '[0-9]*$')
 curl -i http://127.0.0.1:$PORT/healthz
 ./scripts/healthcheck.sh http://127.0.0.1:$PORT/healthz
 ```
