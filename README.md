@@ -368,9 +368,9 @@ curl -i http://127.0.0.1:8080/task6-test-not-found
 ```
 
 Additional setup and troubleshooting details are in
-[`monitoring/loki-setup.md`](monitoring/loki-setup.md). Screenshot evidence
-is available at
-[`docs/screenshots/loki-404-query.png`](docs/screenshots/loki-404-query.png).
+[`monitoring/loki-setup.md`](monitoring/loki-setup.md). Screenshot evidence:
+
+![Grafana Explore showing the Loki query for the NGINX 404 request](docs/screenshots/loki-404-query.png)
 
 Stop the stack with:
 
@@ -417,10 +417,15 @@ nginx_connections_active
 ```
 
 For component-level verification, see
-[`metrics/README.md`](metrics/README.md). Screenshots:
+[`metrics/README.md`](metrics/README.md).
 
-- [Prometheus targets](docs/screenshots/prometheus-targets.png)
-- [Grafana NGINX dashboard](docs/screenshots/grafana-nginx-dashboard.png)
+### Prometheus targets
+
+![Prometheus targets showing the NGINX exporter as UP](docs/screenshots/prometheus-targets.png)
+
+### Grafana NGINX dashboard
+
+![Grafana dashboard displaying NGINX metrics](docs/screenshots/grafana-nginx-dashboard.png)
 
 Stop the metrics stack:
 
@@ -478,4 +483,3 @@ docker compose -f metrics/docker-compose.yaml exec nginx \
 docker compose -f metrics/docker-compose.yaml exec nginx-exporter \
   wget -qO- http://127.0.0.1:9113/metrics
 ```
-
