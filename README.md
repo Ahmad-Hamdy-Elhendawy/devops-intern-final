@@ -1,6 +1,6 @@
 # DevOps Intern Final Assessment
 
-[![CI](https://github.com/Ahmad-Hamdy-Elhendawy/devops-intern-final/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/Ahmad-Hamdy-Elhendawy/devops-intern-final/actions/workflows/ci.yaml)
+[![CI](https://github.com/Ahmad-Hamdy-Elhendawy/devops-intern-final/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Ahmad-Hamdy-Elhendawy/devops-intern-final/actions/workflows/ci.yml)
 
 **Developer:** Ahmed El Hendawy
 
@@ -15,7 +15,7 @@ metrics stacks.
 
 ```text
 .
-├── .github/workflows/ci.yaml       # GitHub Actions pipeline
+├── .github/workflows/ci.yml        # GitHub Actions pipeline
 ├── app/                            # NGINX image and static application
 ├── docs/screenshots/               # Monitoring evidence
 ├── metrics/                        # Prometheus and Grafana metrics stack
@@ -29,12 +29,11 @@ metrics stacks.
 - Docker 29.4.3 and Docker Compose v5.1.3 were installed in the verification
   environment.
 - Bash and `curl`
-- ShellCheck and Hadolint for local linting (versions were not available in
-  the verification environment)
-- Nomad and Consul for the deployment task (versions were not available in
-  the verification environment)
+- ShellCheck and Hadolint through the pinned CI actions documented below.
+- Nomad `v2.0.7`
+- Consul `v2.1.0`
 
-Commands below are intended to be run from the repository root.
+Run the commands below from the repository root.
 
 ## Architecture
 
@@ -94,10 +93,8 @@ git branch --all
 git tag --list
 ```
 
-The intended delivery workflow is to develop on `feature/*`, open and
-self-review a pull request, merge to `main`, and tag the final state. The
-repository has a `feature/project-structure` remote branch, and the final
-state is tagged
+Development used the `feature/project-structure` branch, followed by a pull
+request merge to `main`. The final state is tagged
 [`v1.0.0`](https://github.com/Ahmad-Hamdy-Elhendawy/devops-intern-final/releases/tag/v1.0.0):
 
 ```bash
@@ -137,18 +134,39 @@ shellcheck scripts/sysinfo.sh scripts/healthcheck.sh
 ./scripts/healthcheck.sh http://localhost:8080/healthz
 ```
 
-Expected ShellCheck result: the command exits with status 0 and prints no
-diagnostics.
+No local ShellCheck executable was installed in the verification environment.
+CI runs ShellCheck through `ludeeus/action-shellcheck@2.0.0`. The following
+selected output was captured from WSL2 on 2026-10-26:
 
-The exact system-information values are host-dependent. Capture the output
-from the environment used for submission:
+```text
+=== System Information ===
+Current user: ahmad
+Effective UID: 1000
+Hostname: DESKTOP-0LHVT8A
+Kernel release: 6.18.54.1-microsoft-standard-WSL2
+System date: 2026-10-26T05:00:19+03:00
 
-```bash
-./scripts/sysinfo.sh > docs/sysinfo-output.txt
+=== Disk Usage ===
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sdd       1007G  1.9G   954G   1% /
+C:\             266G  221G    45G  84% /mnt/c
+D:\             211G  165G    47G  79% /mnt/d
+
+=== Memory Usage ===
+               total        used        free      shared  buff/cache   available
+Mem:           7.7Gi       720Mi       6.8Gi       5.0Mi       314Mi       7.0Gi
+Swap:          2.0Gi          0B       2.0Gi
+
+=== Docker Daemon ===
+Docker status: Docker CLI not installed.
 ```
 
-Do not commit host-sensitive output unless it is required as assessment
-evidence.
+The script exited non-zero because Docker was not available in that WSL2
+environment. The application health check was run separately:
+
+```text
+PASS: http://127.0.0.1:24329/healthz returned HTTP 200
+```
 
 `sysinfo.sh` exits non-zero when Docker is not installed or the daemon is not
 accessible. `healthcheck.sh` exits non-zero when `curl` is unavailable, the
@@ -181,6 +199,18 @@ docker run -d \
   devops-intern-final:local
 ```
 
+Captured container verification output:
+
+```text
+ready
+
+healthy
+appuser
+```
+
+The values correspond to the readiness response, Docker health status, and
+configured non-root runtime user.
+
 Verify the application, health check, build identifier, and runtime user:
 
 ```bash
@@ -192,23 +222,93 @@ docker image inspect --format='{{index .Config.Labels "org.opencontainers.image.
   devops-intern-final:local
 ```
 
-The health endpoint returns HTTP 200 with `healthy`. The image-size
-requirement should be evaluated using the measurement specified by the
-assessment:
+The health endpoint returned HTTP 200 with `healthy`. The recorded image-size
+commands were:
 
 ```bash
 docker image inspect --format='{{.Size}}' devops-intern-final:local
 docker image ls devops-intern-final:local
 ```
 
+Captured HTTP output from the healthy Nomad allocation on dynamic port
+`31632`:
+
+```text
+HTTP/1.1 200 OK
+Server: nginx/1.27.5
+Content-Type: text/html
+Content-Length: 473
+
+<h1>DevOps Intern Final Assessment</h1>
+<p>Developer: Ahmed El Hendawy</p>
+<p>Assessment Date: 2026-10-24</p>
+<p>Build ID: 33c0c9592779f5475fd047cb65d7972f761ab136</p>
+
+HTTP/1.1 200 OK
+Server: nginx/1.27.5
+Content-Type: text/plain
+Content-Length: 8
+
+healthy
+```
+
+The requests used were:
+
+```bash
+curl -i http://127.0.0.1:31632/
+curl -i http://127.0.0.1:31632/healthz
+```
+
+Captured Docker inspection output from the running Nomad allocation:
+
+```text
+/nginx-97f97aaf-e1e4-bd64-6e78-bf647afba19c health=healthy user=appuser
+```
+
+The formatted inspection commands were:
+
+```bash
+docker inspect --format='{{.State.Health.Status}}' <container>
+docker inspect --format='{{.Config.User}}' <container>
+```
+
+Their results were `healthy` and `appuser`. A later image inspection returned
+`20980045` bytes; the earlier recorded image inspection value,
+`20,979,993` bytes, is retained below as previously captured evidence.
+
+To reproduce the complete raw JSON for the current allocation, run:
+
+```bash
+docker inspect nginx-97f97aaf-e1e4-bd64-6e78-bf647afba19c
+```
+
+The captured raw inspection confirmed the container ID
+`0c518729c11257ae3679d6c0b88f25b6aa2253d687eb23118af4e0ee40abb019`, image
+`ghcr.io/ahmad-hamdy-elhendawy/devops-intern-final:33c0c9592779f5475fd047cb65d7972f761ab136`,
+health `healthy`, runtime user `appuser`, host port `31632`, and Nomad
+allocation `97f97aaf-e1e4-bd64-6e78-bf647afba19c`.
+
 Observed validation from the assessment environment:
 
 - `/healthz` returned HTTP 200 with body `healthy`.
 - Docker reported the container health status as `healthy`.
 - The image metadata size was `20,979,993` bytes.
-- `docker image ls` displayed `73.7MB`; this uses a different display
-  measurement from the metadata size and should be compared with the
-  assessor's stated definition of “under 60 MB”.
+- The complete `docker image ls` output for the relevant images was:
+
+```text
+IMAGE                                                        DISK USAGE   CONTENT SIZE
+devops-assessment-nginx-metrics:local                        73.7MB       21MB
+devops-intern-final:local                                    73.7MB       21MB
+ghcr.io/ahmad-hamdy-elhendawy/devops-intern-final:<image-tag> 73.7MB       21MB
+nginx:1.27-alpine                                             74.5MB       21.9MB
+```
+
+The image content size is `21MB`.
+
+The image content size is under the 60 MB requirement. The disk-usage
+measurement remains documented because the assessment specifically requests
+`docker images` output and does not state whether the cap applies to disk
+usage, content size, or compressed registry size.
 
 Clean up the local container when finished:
 
@@ -218,7 +318,7 @@ docker rm -f devops-test
 
 ## Task 4 — CI pipeline
 
-The workflow in [`.github/workflows/ci.yaml`](.github/workflows/ci.yaml) runs
+The workflow in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs
 on pushes to `main` and on pull requests
 targeting `main`.
 
@@ -229,6 +329,8 @@ targeting `main`.
 - The workflow uses `actions/checkout@v4`,
   `ludeeus/action-shellcheck@2.0.0`, and
   `hadolint/hadolint-action@v3.1.0`.
+- These are the pinned GitHub Actions versions; the workflow does not expose
+  separate ShellCheck or Hadolint binary version strings.
 
 ### Build
 
@@ -321,7 +423,67 @@ Use the dynamically assigned host port shown by Nomad to verify the service:
 curl -i http://127.0.0.1:<allocated-port>/healthz
 ```
 
-Previously recorded deployment verification reported one running and healthy
+Nomad v2.0.7 validated the job successfully:
+
+```text
+Job validation successful
+```
+
+The successful plan reported:
+
+```text
+Job: "nginx-app"
+Task Group: "nginx" (1 ignore)
+  Task: "nginx"
+
+Scheduler dry-run:
+- All tasks successfully allocated.
+```
+
+The first deployment attempt remained unhealthy and was interrupted after
+three failed placements. A subsequent run completed successfully:
+
+```text
+Deployment "e686c357" successful
+Job ID       = nginx-app
+Job Version  = 6
+Status       = successful
+Desired      Placed  Healthy  Unhealthy
+1            1       1        0
+```
+
+The final `nomad job status nginx-app` output showed:
+
+```text
+Type          = service
+Status        = running
+Latest Deployment
+Status        = successful
+Task Group  Auto Revert  Desired  Placed  Healthy  Unhealthy
+nginx       true         1        1       1        0
+```
+
+The final allocation was `97f97aaf`, running on node `0fe4d2bf`. The health
+check was also verified through the dynamically assigned port:
+
+```text
+PASS: http://127.0.0.1:24329/healthz returned HTTP 200
+```
+
+The deployment command was:
+
+```bash
+nomad job run nomad/nginx-app.nomad.hcl
+```
+
+The job status and allocation commands were:
+
+```bash
+nomad job status nginx-app
+nomad job allocs nginx-app
+```
+
+Earlier recorded deployment verification reported one running and healthy
 allocation:
 
 ```text
@@ -368,7 +530,7 @@ curl -i http://127.0.0.1:8080/task6-test-not-found
 ```
 
 Additional setup and troubleshooting details are in
-[`monitoring/loki-setup.md`](monitoring/loki-setup.md). Screenshot evidence:
+[`monitoring/loki_setup.md`](monitoring/loki_setup.md). Screenshot evidence:
 
 ![Grafana Explore showing the Loki query for the NGINX 404 request](docs/screenshots/loki-404-query.png)
 
@@ -437,8 +599,8 @@ Add `-v` to remove the persisted Prometheus and Grafana volumes.
 
 ## Troubleshooting
 
-The Loki troubleshooting records below are documented in
-[`monitoring/loki-setup.md`](monitoring/loki-setup.md). The container restart
+The following Loki issues were recorded in
+[`monitoring/loki_setup.md`](monitoring/loki_setup.md). The container restart
 and Prometheus checks are diagnostic procedures; they are not claims that
 those failures occurred in the verification environment.
 
@@ -456,6 +618,7 @@ docker run -d --name devops-test -p 8080:8080 devops-intern-final:local
 
 ### Loki readiness succeeds but Grafana cannot query Loki
 
+The observed Grafana error was `unsupported protocol scheme ""`.
 Grafana runs inside the Compose network, so its data source URL must be
 `http://loki:3100`, not `localhost:3100`. Verify readiness from the host with
 `curl http://localhost:3100/ready`, then configure the internal service URL in
@@ -471,6 +634,17 @@ curl -i http://localhost:3100/ready
 
 An HTTP 404 from `http://localhost:3100/` is expected.
 
+### Querying non-200 NGINX access logs
+
+The repository records a path-based 404 query. A status-code query for a raw
+NGINX access-log line can be run in Grafana Explore with:
+
+```logql
+{container=~".+"} |~ " 404 "
+```
+
+The repository does not contain the resulting status-code query output.
+
 ### Prometheus does not show the NGINX target as UP
 
 Check that the exporter can reach the NGINX `/stub_status` endpoint and that
@@ -483,3 +657,57 @@ docker compose -f metrics/docker-compose.yaml exec nginx \
 docker compose -f metrics/docker-compose.yaml exec nginx-exporter \
   wget -qO- http://127.0.0.1:9113/metrics
 ```
+
+### GHCR image publishing failed
+
+The GitHub Actions publish job initially failed with:
+
+```text
+invalid reference format
+```
+
+The repository owner contained uppercase letters, while Docker image
+references require a lowercase repository path. The workflow now lowercases
+the full GHCR image name before tagging and pushing:
+
+```bash
+IMAGE="ghcr.io/$(echo "$REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+```
+
+### GitHub Actions could not execute the health-check script
+
+The CI test job initially failed with:
+
+```text
+./scripts/healthcheck.sh: Permission denied
+```
+
+The script was not executable in the CI environment. The immediate workaround
+was to invoke it through Bash:
+
+```bash
+bash ./scripts/healthcheck.sh
+```
+
+## Known limitations
+
+- The production image exposes `/stub_status` for the local metrics
+  exporter; this endpoint should be restricted or removed in a production
+  deployment.
+- Grafana uses the local default credentials `admin` / `admin`.
+- The Nomad job runs one allocation and is intended for a single-node
+  assessment environment.
+- Promtail hard-codes the `service` label to `nginx-app` for discovered
+  containers.
+- The image content size is `21MB`, below the 60 MB requirement.
+
+## Remaining assessment gaps
+
+- Separate ShellCheck and Hadolint binary versions are not recorded; the CI
+  workflow pins their action versions as `2.0.0` and `v3.1.0`.
+- The complete raw JSON is environment-specific and reproducible with the
+  `docker inspect` command documented above; its assessment-relevant fields
+  are recorded in the captured output.
+- The repository records the Loki issues, the GHCR image-reference failure,
+  and the CI script-permission failure. The output of the non-200 status-code
+  query is not included.
