@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, script-exec-bit]
+    branches: [main, fix/script-exec-bit]
   pull_request:
     branches: [main]
 
