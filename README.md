@@ -28,8 +28,8 @@ An end-to-end pipeline for a containerised NGINX application: source control, Li
 | Docker Compose | v5.1.3 |
 | Nomad | v2.0.7 |
 | Consul | v2.1.0 |
-| ShellCheck | TODO: output of `shellcheck --version` (CI uses `ludeeus/action-shellcheck@2.0.0`) |
-| Hadolint | TODO: output of `hadolint --version` (CI uses `hadolint/hadolint-action@v3.1.0`) |
+| ShellCheck | v0.11.0 (latest release; CI runs it through `ludeeus/action-shellcheck@2.0.0`) |
+| Hadolint | v2.15.0 (latest release; CI runs it through `hadolint/hadolint-action@v3.1.0`) |
 | Bash, curl | any recent version |
 
 Run all commands from the repository root.
@@ -57,6 +57,10 @@ The CI build job produces a single image artifact. The test and publish jobs loa
 
 ## Quick Start
 
+Docker must be running. There are two ways to get the application up; each takes fewer than ten commands.
+
+### Option A: Docker only
+
 ```sh
 git clone https://github.com/Ahmad-Hamdy-Elhendawy/devops-intern-final.git
 cd devops-intern-final
@@ -69,6 +73,36 @@ docker rm -f devops-test
 ```
 
 Expected: HTTP 200 on both URLs, the `/healthz` body is `healthy`, and `healthcheck.sh` exits 0.
+
+### Option B: Consul and Nomad (the deployed pipeline)
+
+This pulls the image that CI published to GHCR and runs it as a Nomad job registered in Consul. Start the two agents first, each in its own terminal, and leave them running:
+
+```sh
+# terminal 1
+consul agent -dev
+
+# terminal 2
+nomad agent -dev
+```
+
+Then, in a third terminal:
+
+```sh
+git clone https://github.com/Ahmad-Hamdy-Elhendawy/devops-intern-final.git
+cd devops-intern-final
+nomad job run nomad/nginx-app.nomad.hcl
+nomad job status nginx-app
+PORT=$(curl -s http://127.0.0.1:8500/v1/catalog/service/nginx-app | grep -o '"ServicePort":[0-9]*' | cut -d: -f2)
+curl -i http://127.0.0.1:$PORT/healthz
+./scripts/healthcheck.sh http://127.0.0.1:$PORT/healthz
+```
+
+Expected: the allocation shows `running` and healthy in `nomad job status`, and both checks return HTTP 200 with the body `healthy`. The port is dynamic, so it is read from Consul's service catalog (the Nomad UI at `http://127.0.0.1:4646` shows it too).
+
+To deploy a specific image, pass its tag: `nomad job run -var="image_tag=<commit-sha>" nomad/nginx-app.nomad.hcl`.
+
+Clean up with `nomad job stop -purge nginx-app`, then stop both agents with Ctrl+C. The GHCR package must be public, otherwise run `docker login ghcr.io` first.
 
 ## Task 1 — Source control
 
