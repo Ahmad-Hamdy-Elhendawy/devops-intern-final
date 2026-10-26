@@ -1,5 +1,5 @@
 
-FROM nginx:1.27-alpine
+FROM nginx:1.27-alpine-slim 
 
 ARG BUILD_SHA=local
 LABEL org.opencontainers.image.revision="${BUILD_SHA}"
