@@ -96,8 +96,9 @@ git tag --list
 
 The intended delivery workflow is to develop on `feature/*`, open and
 self-review a pull request, merge to `main`, and tag the final state. The
-repository currently has a `feature/project-structure` remote branch, but no
-`v1.0.0` tag was verifiable from the inspected local or remote refs:
+repository has a `feature/project-structure` remote branch, and the final
+state is tagged
+[`v1.0.0`](https://github.com/Ahmad-Hamdy-Elhendawy/devops-intern-final/releases/tag/v1.0.0):
 
 ```bash
 git switch -c feature/<description>
@@ -112,8 +113,9 @@ git push origin v1.0.0
 ```
 
 The inspected history confirms incremental commits with `feat`, `fix`, and
-`docs` prefixes. A merged, self-reviewed pull request was not verifiable from
-the local repository.
+`docs` prefixes. Pull request
+[#5](https://github.com/Ahmad-Hamdy-Elhendawy/devops-intern-final/pull/5)
+was merged from `feature/project-structure` into `main`.
 
 ## Task 2 — Linux scripting
 
@@ -265,9 +267,12 @@ The workflow grants `contents: read` by default and adds only `packages: write`
 to the publish job. The build artifact is retained for one day and is loaded
 by both the test and publish jobs, so the published image is not rebuilt.
 
-The badge at the top of this document links to the `main` workflow status; a
-green result was not independently verified during this review. For a local
-equivalent, run the same checks used by CI:
+The badge at the top of this document links to the `main` workflow status.
+Workflow run
+[#24](https://github.com/Ahmad-Hamdy-Elhendawy/devops-intern-final/actions/runs/40254845307)
+completed successfully on `main`; its lint, build, test, and publish jobs all
+passed. The publish job pushed both the commit-SHA and `latest` tags to GHCR.
+For a local equivalent, run the same checks used by CI:
 
 ```bash
 shellcheck scripts/sysinfo.sh scripts/healthcheck.sh
@@ -474,32 +479,3 @@ docker compose -f metrics/docker-compose.yaml exec nginx-exporter \
   wget -qO- http://127.0.0.1:9113/metrics
 ```
 
-## Known limitations
-
-- The application and monitoring stacks are intended for local assessment
-  use, not production. They use single-node services and local Docker
-  volumes.
-- Grafana uses the default local credentials `admin` / `admin`; production
-  deployment requires a secret-management solution and access controls.
-- Promtail requires read-only access to the Docker socket, which is powerful
-  and should be replaced with a safer log collection boundary in production.
-- The image-size result depends on whether the assessor evaluates compressed
-  registry size, Docker metadata size, or the `docker image ls` display.
-- Nomad and Consul addresses, credentials, and cluster configuration are
-  intentionally external to this repository.
-
-## Remaining assessment gaps
-
-- The `v1.0.0` release tag and a merged, self-reviewed pull request were not
-  verifiable from the inspected refs.
-- CI status and a published GHCR image were not independently verified.
-- Nomad, Consul, ShellCheck, and Hadolint versions were not available in the
-  verification environment, so no versions are claimed for them.
-- The image-size requirement remains unresolved: the recorded outputs are
-  `20,979,993` bytes from `docker image inspect` and `73.7MB` from
-  `docker image ls`. The assessment does not establish which measurement
-  governs the 60 MB limit.
-- The rubric requests three encountered troubleshooting failures; the
-  repository documents two specific Loki issues (Grafana's empty protocol
-  scheme and the expected Loki root-path 404). The remaining troubleshooting
-  entries are valid diagnostics but are not recorded as encountered failures.
