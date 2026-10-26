@@ -270,3 +270,35 @@ The test request was generated against the NGINX application using `/task6-test-
 Detailed setup, queries, and troubleshooting: [`monitoring/loki_setup.md`](monitoring/loki_setup.md).
 
 Screenshot evidence: [`docs/screenshots/loki-404-query.png`](docs/screenshots/loki-404-query.png).
+
+
+## Metrics Stack
+
+The `metrics/` directory contains a Docker Compose stack for collecting and visualizing NGINX metrics using the NGINX Prometheus Exporter, Prometheus, and Grafana.
+
+Start the stack from the repository root:
+
+```bash
+docker compose -f metrics/docker-compose.yaml up -d --build
+```
+
+Access the services:
+
+- **Prometheus:** http://localhost:8624
+- **Grafana:** http://localhost:3001 (local credentials: `admin` / `admin`)
+
+Prometheus scrapes NGINX exporter metrics every 15 seconds. Grafana loads the provisioned dashboard from `metrics/grafana/dashboards/nginx-metrics.json`.
+
+### Metrics Screenshots
+
+**Prometheus — Scrape Targets**
+
+![Prometheus targets showing NGINX scrape status](docs/screenshots/prometheus-targets.png)
+
+**Grafana — NGINX Metrics Dashboard**
+
+![Grafana dashboard displaying NGINX metrics](docs/screenshots/grafana-nginx-dashboard.png)
+
+
+See [`metrics/README.md`](metrics/README.md) for architecture, configuration, verification commands, and troubleshooting.
+-
