@@ -1,0 +1,36 @@
+groups:
+  - name: nginx-slo
+    rules:
+      - record: nginx:availability:ratio_5m
+        expr: avg_over_time(up{job="nginx"}[5m])
+      - record: nginx:availability:ratio_7d
+        expr: avg_over_time(up{job="nginx"}[7d])
+
+  - name: nginx-alerts
+    rules:
+      - alert: NginxDown
+        expr: up{job="nginx"} == 0 or nginx_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "NGINX is down"
+          description: "Prometheus cannot scrape NGINX, or NGINX is not answering stub_status, for over 1 minute."
+
+      - alert: NginxHighActiveConnections
+        expr: nginx_connections_active > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High active connections"
+          description: "NGINX has had more than 100 active connections for 5 minutes."
+
+      - alert: NginxErrorBudgetFastBurn
+        expr: (1 - avg_over_time(up{job="nginx"}[1h])) > (14.4 * 0.005)
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "SLO error budget burning fast"
+          description: "At this rate the 99.5% weekly SLO will be missed within hours."
